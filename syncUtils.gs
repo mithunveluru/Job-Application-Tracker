@@ -246,9 +246,11 @@ function eligible_(t, stage, now) {
 function tasksFor_(s, stage, n) {
   const now = Date.now();
   const all = s.queue.rows.map(r => r.data).concat(s.queue.added);
-  // Oldest email first, so a confirmation creates its application before later replies are matched.
+  // New mail before backfill/rescan, so the daily LLM quota is not spent on old mail while new applications wait.
+  // Within each group oldest email first, so a confirmation creates its application before later replies are matched.
+  const old = t => t['Source'] === 'backfill' || t['Source'] === 'rescan' ? 1 : 0;
   const when = t => t['Email Date'] instanceof Date ? t['Email Date'].getTime() : new Date(t['Discovered At']).getTime();
-  return all.filter(t => eligible_(t, stage, now)).sort((a, b) => when(a) - when(b)).slice(0, n);
+  return all.filter(t => eligible_(t, stage, now)).sort((a, b) => old(a) - old(b) || when(a) - when(b)).slice(0, n);
 }
 
 function completeTask_(t, outcome) {
@@ -271,6 +273,14 @@ function failTask_(s, t, category, message, retryAfterSec, stats) {
   if (category === 'config') {
     t['State'] = 'retry';
     t['Next Attempt At'] = new Date(Date.now() + 15 * 60000);
+    return 'stop';
+  }
+  if (category === 'rate_limit') {
+    // Quota exhausted (e.g. Groq's daily token limit): not this message's fault, so no attempt is
+    // counted, and the run stops instead of failing every remaining task against the same limit.
+    t['State'] = 'retry';
+    t['Next Attempt At'] = new Date(Date.now() + Math.max(5 * 60, retryAfterSec || 0) * 1000);
+    stats.retried++;
     return 'stop';
   }
   t['Attempts'] = Number(t['Attempts'] || 0) + 1;

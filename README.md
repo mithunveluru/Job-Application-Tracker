@@ -184,7 +184,8 @@ Two providers are built in; choose with `LLM.PROVIDER` in `config.gs`. Each has 
   quoted text, 2 earlier thread messages of 700 chars); triage batches 10 messages; after each response the
   `x-ratelimit-remaining-tokens` / `x-ratelimit-reset-tokens` headers are read and, when the minute's tokens are nearly
   used, the run waits for the window to reset (at most 30 s); a 429 with a short `retry-after` is waited out once, a
-  longer one goes back to the Work Queue with backoff.
+  longer one (e.g. the daily limit) stops the run and the task waits for the provider's `retry-after` (at least 5 min)
+  without using up an attempt.
 - **What that means in practice:** a classification uses roughly 4–7k tokens, so about one per minute and
   ~30–50 per day fit the 120b model's daily token budget; triage (20b) screens roughly 400–600 messages a day. That is
   plenty for day-to-day mail, but a large **backfill takes many days**. Nothing is lost while waiting — the queue
@@ -204,8 +205,8 @@ classification ≈ $0.02–0.05; a 6-month backfill with ~5,000 candidate and ~4
 triage model (e.g. `claude-haiku-5-5`) cuts that; measure with the evaluation first.
 
 ### Common behaviour
-Keys are read from Script Properties and never logged or shown. Errors are categorised: `rate_limit` (429) and
-`transient` (5xx, network/timeout) are retried with backoff; `invalid_output` (bad JSON, schema failure, output limit
+Keys are read from Script Properties and never logged or shown. Errors are categorised: `transient` (5xx,
+network/timeout) is retried with backoff; `rate_limit` (429) stops the run and waits without using up attempts; `invalid_output` (bad JSON, schema failure, output limit
 reached) is retried; refusals and permanent errors (e.g. a request larger than the model accepts) go to the dead-letter
 state; `config` errors (bad key/model/request, 400/401/403/404) stop the run without using up attempts.
 `UrlFetchApp` has no configurable timeout; a hung request is ended by Apps Script and counted as transient. Every

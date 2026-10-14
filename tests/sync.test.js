@@ -203,18 +203,20 @@ test('provider unavailable, rate limits and malformed JSON are retried with back
   w.modelOverride = call => {
     n++;
     if (call.body.output_config.format.schema.properties.results) { n--; return apiOk({ results: [{ message_id: w.mailbox[0].id, possibly_relevant: true, reason: '' }] }); }
-    return n % 2 ? { status: 429, headers: { 'retry-after': '0' }, body: { type: 'error', error: { type: 'rate_limit_error', message: 'x' } } } : apiOk('{not json');
+    return n === 1 ? { status: 429, headers: { 'retry-after': '0' }, body: { type: 'error', error: { type: 'rate_limit_error', message: 'x' } } } : apiOk('{not json');
   };
   w.backfill();
   let t = w.queue()[0];
   assert.equal(t.State, 'retry');
   assert.equal(t['Error Category'], 'rate_limit');
+  assert.equal(Number(t.Attempts || 0), 0, 'a rate limit is not counted as an attempt');
   assert.ok(t['Next Attempt At'] > new Date(Date.now() + 4 * 60000), 'backoff applied');
   const waiting = w.sync();
   assert.equal(w.queue()[0].State, 'retry', 'not retried before its time');
   assert.equal(waiting.result, 'partial', 'never reported complete while a message waits for retry');
   timePasses(); w.sync();
   assert.equal(w.queue()[0]['Error Category'], 'invalid_output');
+  timePasses(); w.sync();
   timePasses(); w.sync();
   t = w.queue()[0];
   assert.equal(t.State, 'dead');
@@ -229,6 +231,15 @@ test('provider unavailable, rate limits and malformed JSON are retried with back
   w.sync();
   assert.equal(w.queue()[0].State, 'done', JSON.stringify(w.queue()[0]));
   assert.equal(w.apps().length, 1);
+});
+
+test('exhausted rate limit stops the run without burning attempts', () => {
+  const w = world([F.acmeConfirm(), F.hooliConfirm()]);
+  w.modelOverride = () => ({ status: 429, headers: { 'retry-after': '3600' }, body: { type: 'error', error: { type: 'rate_limit_error', message: 'daily limit' } } });
+  w.backfill();
+  assert.ok(w.queue().every(t => Number(t.Attempts || 0) === 0 && t.State !== 'dead'));
+  assert.equal(w.fetch.calls.length, 1, 'stopped after the first rate limit');
+  assert.ok(w.queue()[0]['Next Attempt At'] > new Date(Date.now() + 59 * 60000), 'waits as long as the provider asks');
 });
 
 test('bad API key stops the run without burning attempts', () => {
@@ -402,7 +413,11 @@ test('reconcile re-derives statuses; reclassify selected rows', () => {
   assert.match(changes.join(), /Applied -> Interview/);
   const env = w.env();
   const ev = w.ss.tab('Email Events');
+  ev.hiddenRows = new Set([3]);   // filtered out: a selection spanning it must not include it
   env.activeRange = ev.getRange(2, 1, 2, 3);
+  env.run('reclassifySelected');
+  assert.equal(w.queue().filter(t => t.Force === 'Yes').length, 1, 'rows hidden by a filter are skipped');
+  ev.hiddenRows = null;
   env.run('reclassifySelected');
   assert.equal(w.queue().filter(t => t.Force === 'Yes').length, 2);
 });

@@ -294,3 +294,9 @@ test('high-impact events need a sender plausibly speaking for the employer', () 
   assert.ok(!Status.senderPlausible(e('Promo Bot <promo@spammy.example>'), 'Acme Robotics', null, false), 'unrelated sender');
   assert.ok(!Status.senderPlausible(e('Promo <x@gmail.com>'), null, null, false), 'no company, freemail');
 });
+
+test('work queue: new mail is processed before backfill, each group oldest first', () => {
+  const t = (id, source, day) => ({ 'Task ID': id, 'Source': source, 'Stage': 'classify', 'State': 'pending', 'Discovered At': '2026-10-' + day + 'T00:00:00Z' });
+  const s = { queue: { rows: [t('B-old', 'backfill', '01'), t('H-new', 'history', '13'), t('R', 'rescan', '02'), t('H-old', 'history', '12')].map(d => ({ data: d })), added: [t('M', 'manual', '14')] } };
+  assert.deepEqual(plain(env.run('tasksFor_', s, 'classify', 10).map(x => x['Task ID'])), ['H-old', 'H-new', 'M', 'B-old', 'R']);
+});

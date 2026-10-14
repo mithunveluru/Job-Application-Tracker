@@ -120,6 +120,8 @@ class FakeSheet {
     return s;
   }
   getFilter() { return this.filter; }
+  isRowHiddenByFilter(r) { return !!(this.hiddenRows && this.hiddenRows.has(r)); }
+  isRowHiddenByUser() { return false; }
   getCharts() { return this.charts.slice(); }
   insertChart(c) { this.ss.write('insertChart'); this.charts.push(c); }
   removeChart(c) { this.ss.write('removeChart'); this.charts.splice(this.charts.indexOf(c), 1); }

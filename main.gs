@@ -130,7 +130,11 @@ function reclassifySelected() {
   const head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const c = head.indexOf('Gmail Message ID');
   if (c === -1) return notify_('Reclassify', 'Select rows in Email Events, Review Queue or Work Queue first.');
-  const ids = sheet.getRange(range.getRow(), c + 1, range.getNumRows(), 1).getValues().map(r => String(r[0])).filter(id => id && !/^legacy/.test(id));
+  // A selection over a filtered tab also covers the rows the filter hides: skip those.
+  const first = range.getRow();
+  const ids = sheet.getRange(first, c + 1, range.getNumRows(), 1).getValues()
+    .map((r, i) => sheet.isRowHiddenByFilter(first + i) || sheet.isRowHiddenByUser(first + i) ? '' : String(r[0]))
+    .filter(id => id && !/^legacy/.test(id));
   const n = requeue_(Array.from(new Set(ids)));
   notify_('Reclassify', n + ' message(s) queued. They are classified again (ignoring the cache) on the next sync; run Sync now to do it immediately.');
 }
