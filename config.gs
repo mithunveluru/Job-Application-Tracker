@@ -36,13 +36,14 @@ const CONFIG = {
       groq: {
         MODEL: 'openai/gpt-oss-120b',        // full classification
         TRIAGE_MODEL: 'openai/gpt-oss-20b',  // relevance screen; a different model has its own daily allowance
+        FALLBACK_MODEL: 'openai/gpt-oss-20b', // classification once MODEL's daily token limit is reached ('' = wait instead)
         EFFORT: 'low',                       // reasoning_effort: low | medium | high
         MAX_TOKENS: 2500,
         TRIAGE_MAX_TOKENS: 2000,
         // Free tier is ~8,000 tokens/minute per model: one request at a time, smaller prompts.
         PARALLEL_REQUESTS: 1,
         TRIAGE_BATCH: 10,
-        EMAIL_CHARS: 4000, QUOTED_CHARS: 1000, CONTEXT_MESSAGES: 2, CONTEXT_CHARS: 700
+        EMAIL_CHARS: 2500, QUOTED_CHARS: 500, CONTEXT_MESSAGES: 1, CONTEXT_CHARS: 700
       },
       anthropic: {
         MODEL: 'claude-opus-5-5',

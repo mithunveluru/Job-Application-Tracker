@@ -146,7 +146,10 @@ const LLM_PROVIDERS = {
           return { ok: false, latencyMs: latencyMs, error: { category: 'invalid_output', message: 'HTTP 400: ' + errMsg.slice(0, 250) } };
         }
         if (code === 413) return { ok: false, latencyMs: latencyMs, error: { category: 'permanent', message: 'HTTP 413: request larger than the model allows: ' + errMsg.slice(0, 200) } };
-        return httpFailure_(code, 'HTTP ' + code + ': ' + errMsg, retryAfter, latencyMs);
+        const failure = httpFailure_(code, 'HTTP ' + code + ': ' + errMsg, retryAfter, latencyMs);
+        // e.g. "Rate limit reached for model `openai/gpt-oss-120b` ... on tokens per day (TPD): Limit 200000, ..."
+        if (code === 429 && /on tokens per day \(TPD\)/.test(errMsg)) failure.error.dailyLimit = true;
+        return failure;
       }
       if (!body || !body.choices || !body.choices[0]) return { ok: false, latencyMs: latencyMs, error: { category: 'invalid_output', message: 'Unexpected response shape' } };
       const u = body.usage || {};

@@ -500,7 +500,17 @@ function processClassify_(s, state, stats, timeLeft, out) {
       }
     }
     if (jobs.length) {
+      if (stats.fallbackModel) jobs.forEach(j => { j.req.model = stats.fallbackModel; });
       const results = LLM.run(jobs.map(j => j.req));
+      // Primary model's daily limit reached: one retry on the fallback model, which the rest of this run then uses.
+      const fallback = llm_().FALLBACK_MODEL;
+      const exhausted = fallback && !stats.fallbackModel ? jobs.map((j, k) => k).filter(k => !results[k].ok && results[k].error.dailyLimit) : [];
+      if (exhausted.length) {
+        stats.fallbackModel = fallback;
+        stats.notes.push(jobs[exhausted[0]].req.model + ' daily token limit reached; classifying with ' + fallback);
+        const again = LLM.run(exhausted.map(k => Object.assign({}, jobs[k].req, { model: fallback })));
+        exhausted.forEach((k, i) => { results[k] = again[i]; });
+      }
       let stop = false;
       jobs.forEach((j, k) => {
         const res = results[k];
@@ -653,7 +663,7 @@ function updateAppFromEvent_(a, email, cls, dates) {
 // ------------------------------------------------------------------
 
 function newStats_() {
-  return { discovered: 0, triaged: 0, classified: 0, written: 0, skipped: 0, retried: 0, failed: 0, dead: 0, reviewed: 0, notes: [] };
+  return { discovered: 0, triaged: 0, classified: 0, written: 0, skipped: 0, retried: 0, failed: 0, dead: 0, reviewed: 0, notes: [], fallbackModel: '' };
 }
 
 function queueHealth_(s) {

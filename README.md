@@ -180,14 +180,20 @@ Two providers are built in; choose with `LLM.PROVIDER` in `config.gs`. Each has 
 - **Free-tier limits** (Groq's published table at the time of writing — check
   <https://console.groq.com/docs/rate-limits> for your account): for each of the two models, 30 requests/minute,
   8,000 tokens/minute, 1,000 requests/day, 200,000 tokens/day. Using a different model for triage gives it its own allowance.
-- What the code does about it: requests are sent one at a time; prompts are trimmed (4,000 chars of new text, 1,000 of
-  quoted text, 2 earlier thread messages of 700 chars); triage batches 10 messages; after each response the
+- What the code does about it: requests are sent one at a time; prompts are trimmed (2,500 chars of new text, 500 of
+  quoted text, 1 earlier thread message of 700 chars; subject, sender and date are always sent in full); triage batches 10 messages; after each response the
   `x-ratelimit-remaining-tokens` / `x-ratelimit-reset-tokens` headers are read and, when the minute's tokens are nearly
   used, the run waits for the window to reset (at most 30 s); a 429 with a short `retry-after` is waited out once, a
-  longer one (e.g. the daily limit) stops the run and the task waits for the provider's `retry-after` (at least 5 min)
-  without using up an attempt.
-- **What that means in practice:** a classification uses roughly 4–7k tokens, so about one per minute and
-  ~30–50 per day fit the 120b model's daily token budget; triage (20b) screens roughly 400–600 messages a day. That is
+  longer one stops the run and the task waits for the provider's `retry-after` (at least 5 min) without using up an
+  attempt. When the classification model's **daily token limit** (`tokens per day (TPD)` in Groq's 429 message) is
+  reached, that message is retried once on `FALLBACK_MODEL` (`openai/gpt-oss-20b`), and the rest of the run classifies
+  with it; its results go through exactly the same validation and review checks, and the model used is recorded in
+  Email Events → Model and noted in the Sync Log. If the fallback model is also at its limit the run stops as above.
+  Per-minute limits, auth/request errors and server errors never trigger the fallback. Set `FALLBACK_MODEL: ''` to
+  wait for the primary model instead.
+- **What that means in practice:** a classification uses roughly 3–5k tokens, so about one per minute and
+  ~40–60 per day fit the 120b model's daily token budget, plus more on the 20b fallback (which shares its allowance
+  with triage); triage (20b) screens roughly 400–600 messages a day. That is
   plenty for day-to-day mail, but a large **backfill takes many days**. Nothing is lost while waiting — the queue
   resumes — but start with a short `BACKFILL_START` (a few weeks), narrow `BACKFILL_QUERY` if needed, or upgrade the
   Groq plan. Cost estimates show $0 for the free tier (`LLM.PRICES`); fill in prices if you pay.
